@@ -13,6 +13,7 @@
     "dev": "tsx src/index.ts",
     "preflight": "tsx src/scripts/preflight.ts",
     "new-wallet": "tsx src/scripts/newWallet.ts",
+    "prepaid-phones": "tsx src/scripts/prepaidPhones.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
