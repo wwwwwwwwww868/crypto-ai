@@ -1,0 +1,28 @@
+name: ESPN fantasy lineup
+
+on:
+  schedule:
+    # 15:00 UTC = 10am ET, before any NBA game tips off. Then again late afternoon
+    # to catch injury news (games locked by then are just skipped).
+    - cron: "0 15 * * *"
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  set-lineup:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: espn-fantasy-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python espn_bot.py --days 2 --use-ir
+        env:
+          ESPN_LEAGUE_ID: ${{ secrets.ESPN_LEAGUE_ID }}
+          ESPN_TEAM_ID: ${{ secrets.ESPN_TEAM_ID }}
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
