@@ -10,6 +10,27 @@ Sets your ESPN fantasy basketball lineup for you every day:
 "Best" means this season's average fantasy points, falling back to projections,
 then last season, then % rostered (for category leagues).
 
+## The app (easiest way)
+
+Double-click **`Start App (Windows).bat`** or **`Start App (Mac).command`**, or run:
+
+```bash
+python app.py
+```
+
+It opens in your web browser (at `http://127.0.0.1:8765`). Everything stays on your computer.
+
+- **Lineup tab:** pick a day and see who's starting, who's benched and why
+  ("No game", OUT, etc.) and every change the bot suggests. Hit **Apply lineup**
+  or **Apply next 7 days**.
+- **Autopilot tab:** turn on daily auto-setting at a time you choose, and see a
+  log of what it changed. (It runs while the app is open. For a schedule that
+  runs even when your computer is off, use the GitHub option below.)
+- **Settings tab:** enter your league ID, team ID and ESPN cookies (see below).
+
+Want to look around first? `python app.py --demo` runs it with a made-up team
+and sends nothing to ESPN.
+
 ## 1. Get your IDs and cookies
 
 1. Open your team on **fantasy.espn.com** in a desktop browser while logged in.
@@ -22,12 +43,12 @@ then last season, then % rostered (for category leagues).
 These cookies act like your password. Don't share them or commit them. They
 last for months, but if ESPN logs you out, grab new ones.
 
-## 2. Run it on your computer
+## 2. Or run it from the command line
 
 ```bash
 cd espn-fantasy-bot
 pip install -r requirements.txt
-cp .env.example .env      # then edit .env with your values
+cp .env.example .env      # then edit .env with your values (or use the app's Settings tab)
 python espn_bot.py --dry-run          # preview, changes nothing
 python espn_bot.py                    # set today's lineup
 python espn_bot.py --days 7 --use-ir  # set the whole week, use IR

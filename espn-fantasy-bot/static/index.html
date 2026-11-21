@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lineup Autopilot</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23e8590c'/><path d='M4 50h92M50 4v92M18 18c18 18 18 46 0 64M82 18c-18 18-18 46 0 64' stroke='%23fff' stroke-width='5' fill='none'/></svg>">
+<style>
+  :root {
+    --bg: #f4f5f7; --surface: #ffffff; --surface-2: #f0f1f4; --border: #e3e5ea;
+    --text: #15171c; --muted: #6b7180; --accent: #e8590c; --accent-ink: #ffffff;
+    --accent-soft: #fdeee4; --good: #1a7f4b; --good-soft: #e3f4ea;
+    --warn: #a15c00; --warn-soft: #fbf0dc; --bad: #c0262d; --bad-soft: #fbe5e6;
+    --shadow: 0 1px 2px rgba(16,20,30,.06), 0 4px 16px rgba(16,20,30,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1115; --surface: #171a20; --surface-2: #1f232b; --border: #2a2f39;
+      --text: #eceef2; --muted: #9aa1b0; --accent: #ff7a2e; --accent-ink: #1a0d04;
+      --accent-soft: #3a2113; --good: #4fd18b; --good-soft: #15301f;
+      --warn: #f2b24c; --warn-soft: #33270f; --bad: #ff6b70; --bad-soft: #3a1618;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button { font: inherit; cursor: pointer; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 16px 48px; }
+
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg);
+    border-bottom: 1px solid var(--border); }
+  .bar { max-width: 880px; margin: 0 auto; padding: 14px 16px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .ball { width: 30px; height: 30px; flex: none; }
+  .brand h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  .brand .team { color: var(--muted); font-size: 14px; }
+  .pill { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px;
+    background: var(--accent-soft); color: var(--accent); }
+  nav { display: flex; gap: 4px; margin-top: 10px; }
+  nav button { background: none; border: 0; color: var(--muted); padding: 8px 12px;
+    border-bottom: 2px solid transparent; font-weight: 600; }
+  nav button[aria-selected="true"] { color: var(--text); border-color: var(--accent); }
+
+  .days { display: flex; gap: 8px; overflow-x: auto; padding: 16px 0 4px; scrollbar-width: none; }
+  .day { flex: none; min-width: 64px; padding: 8px 10px; border-radius: 12px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); text-align: center; }
+  .day b { display: block; font-size: 13px; }
+  .day span { font-size: 12px; color: var(--muted); }
+  .day[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .day[aria-pressed="true"] span { color: inherit; opacity: .85; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: var(--shadow); margin-top: 16px; }
+  .summary { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 18px; }
+  .stats { display: flex; gap: 24px; flex: 1; min-width: 240px; }
+  .stat b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { border-radius: 10px; padding: 10px 16px; font-weight: 600; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  .changes { padding: 0 18px 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chg { font-size: 13px; background: var(--surface-2); border-radius: 8px; padding: 4px 8px; }
+
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+    margin: 0; padding: 14px 18px 6px; }
+  .row { display: grid; grid-template-columns: 64px 1fr auto auto; align-items: center; gap: 12px;
+    padding: 10px 18px; border-top: 1px solid var(--border); }
+  .slot { font-size: 12px; font-weight: 700; text-align: center; padding: 5px 0; border-radius: 8px;
+    background: var(--surface-2); }
+  .starting .slot { background: var(--accent-soft); color: var(--accent); }
+  .slot small { display: block; font-weight: 500; color: var(--muted); font-size: 10px; }
+  .name { font-weight: 600; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .game { font-size: 13px; text-align: right; white-space: nowrap; }
+  .game.none { color: var(--muted); }
+  .fp { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; min-width: 44px; }
+  .fp small { display: block; font-size: 10px; color: var(--muted); font-weight: 500; }
+  .tag { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; margin-left: 6px; }
+  .tag.out { background: var(--bad-soft); color: var(--bad); }
+  .tag.dtd { background: var(--warn-soft); color: var(--warn); }
+  .moved .slot { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .panel { padding: 18px; }
+  label { display: block; font-weight: 600; font-size: 14px; margin: 14px 0 6px; }
+  label:first-child { margin-top: 0; }
+  .hint { font-size: 13px; color: var(--muted); font-weight: 400; margin-top: 4px; }
+  input[type=text], input[type=password], input[type=time], select {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font: inherit; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  .panel > .grid2 { margin-top: 14px; }
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .switch input { width: 44px; height: 24px; accent-color: var(--accent); }
+  details { margin-top: 14px; font-size: 14px; }
+  summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  ol { padding-left: 20px; color: var(--muted); }
+  code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+
+  .log { list-style: none; margin: 0; padding: 0; }
+  .log li { padding: 10px 18px; border-top: 1px solid var(--border); font-size: 14px; display: flex; gap: 12px; }
+  .log time { color: var(--muted); white-space: nowrap; font-size: 13px; }
+  .log .success { color: var(--good); } .log .error { color: var(--bad); }
+
+  .empty { padding: 32px 18px; text-align: center; color: var(--muted); }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+    background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px;
+    font-weight: 600; opacity: 0; transition: .2s; pointer-events: none; max-width: calc(100% - 32px); }
+  .toast.show { opacity: 1; transform: translateX(-50%); }
+  .toast.error { background: var(--bad); color: #fff; }
+  .skeleton { height: 54px; margin: 0 18px; border-top: 1px solid var(--border);
+    background: linear-gradient(90deg, transparent, var(--surface-2), transparent);
+    background-size: 200% 100%; animation: sh 1.2s infinite; }
+  @keyframes sh { to { background-position: -200% 0; } }
+
+  @media (max-width: 560px) {
+    .row { grid-template-columns: 56px 1fr auto; }
+    .game { grid-column: 2; text-align: left; margin-top: -6px; }
+    .fp { grid-row: 1; grid-column: 3; }
+    .grid2 { grid-template-columns: 1fr; }
+    .actions, .actions .btn { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">
+      <svg class="ball" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="var(--accent)"/><path d="M4 50h92M50 4v92M18 18c18 18 18 46 0 64M82 18c-18 18-18 46 0 64" stroke="var(--surface)" stroke-width="5" fill="none"/></svg>
+      <div><h1>Lineup Autopilot</h1><div class="team" id="teamName">ESPN Fantasy Basketball</div></div>
+      <span class="pill" id="demoPill" hidden>DEMO</span>
+    </div>
+    <nav role="tablist">
+      <button role="tab" data-tab="lineup" aria-selected="true">Lineup</button>
+      <button role="tab" data-tab="auto" aria-selected="false">Autopilot</button>
+      <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- LINEUP -->
+  <section id="tab-lineup">
+    <div class="days" id="days"></div>
+    <div class="card">
+      <div class="summary">
+        <div class="stats">
+          <div class="stat"><b id="sPlaying">–</b><span>starters with a game</span></div>
+          <div class="stat"><b id="sChanges">–</b><span>changes suggested</span></div>
+          <div class="stat"><b id="sTeams">–</b><span>NBA teams playing</span></div>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="applyDay">Apply lineup</button>
+          <button class="btn" id="applyWeek">Apply next 7 days</button>
+        </div>
+      </div>
+      <div class="changes" id="changes"></div>
+    </div>
+    <div class="card" id="roster"></div>
+  </section>
+
+  <!-- AUTOPILOT -->
+  <section id="tab-auto" hidden>
+    <div class="card panel">
+      <div class="switch">
+        <div><b>Set my lineup automatically</b>
+          <div class="hint">Runs every day at the time below while this app is open on your computer.</div></div>
+        <input type="checkbox" id="autoOn" aria-label="Autopilot on">
+      </div>
+      <div class="grid2">
+        <div><label for="autoTime">Time</label><input type="time" id="autoTime">
+          <div class="hint">Pick a time before the first game tips off.</div></div>
+        <div><label for="autoDays">Days to set each run</label>
+          <select id="autoDays"><option value="1">Just today</option><option value="2">Today + tomorrow</option>
+            <option value="3">3 days</option><option value="7">Whole week</option></select></div>
+      </div>
+      <label class="switch" style="font-weight:400">
+        <span><b>Move OUT players to IR</b><div class="hint">Only when an IR slot is open.</div></span>
+        <input type="checkbox" id="useIr">
+      </label>
+      <div style="margin-top:16px"><button class="btn primary" id="saveAuto">Save</button></div>
+    </div>
+    <div class="card"><h2>Activity</h2><ul class="log" id="log"></ul></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" hidden>
+    <div class="card panel">
+      <div class="grid2">
+        <div><label for="leagueId">League ID</label><input type="text" id="leagueId" inputmode="numeric" placeholder="123456"></div>
+        <div><label for="teamId">Team ID</label><input type="text" id="teamId" inputmode="numeric" placeholder="1"></div>
+      </div>
+      <div class="hint">Open your team on fantasy.espn.com. The page address has <code>leagueId=…</code> and <code>teamId=…</code> in it.</div>
+      <label for="s2">espn_s2 cookie</label><input type="password" id="s2" autocomplete="off">
+      <label for="swid">SWID cookie</label><input type="password" id="swid" autocomplete="off">
+      <div class="hint" id="cookieHint"></div>
+      <details><summary>How do I find my cookies?</summary>
+        <ol>
+          <li>On a computer, log in at <b>fantasy.espn.com</b>.</li>
+          <li>Press <b>F12</b> (Mac: <b>⌥⌘I</b>) to open developer tools.</li>
+          <li>Chrome/Edge: <b>Application</b> tab → <b>Cookies</b>. Firefox: <b>Storage</b> → <b>Cookies</b>.</li>
+          <li>Click <code>https://fantasy.espn.com</code> and copy the values of <code>espn_s2</code> and <code>SWID</code>.</li>
+        </ol>
+        These act like your password. They're saved only on this computer, in the <code>.env</code> file.
+      </details>
+      <label for="season">Season <span class="hint">(optional)</span></label>
+      <input type="text" id="season" inputmode="numeric" placeholder="Auto">
+      <div class="hint">ESPN names a season by the year it ends: the 2026–27 season is 2027.</div>
+      <div style="margin-top:16px"><button class="btn primary" id="saveSettings">Save</button></div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let config = null, day = 0, plan = null, busy = false;
+
+function toast(msg, error) {
+  const t = $("toast"); t.textContent = msg; t.className = "toast show" + (error ? " error" : "");
+  clearTimeout(t._h); t._h = setTimeout(() => t.className = "toast", 3500);
+}
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body) } : {});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---- tabs ----
+function showTab(name) {
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === name));
+  ["lineup", "auto", "settings"].forEach((t) => $("tab-" + t).hidden = t !== name);
+  if (name === "auto") loadLog();
+}
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+
+// ---- days ----
+function renderDays() {
+  const today = new Date();
+  $("days").innerHTML = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today); d.setDate(today.getDate() + i);
+    const top = i === 0 ? "Today" : i === 1 ? "Tmrw" : d.toLocaleDateString(undefined, { weekday: "short" });
+    return `<button class="day" data-i="${i}" aria-pressed="${i === day}"><b>${top}</b>
+      <span>${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></button>`;
+  }).join("");
+  $("days").querySelectorAll(".day").forEach((b) => b.onclick = () => { day = +b.dataset.i; renderDays(); loadPlan(); });
+}
+
+// ---- lineup ----
+function injuryTag(s) {
+  if (!s || s === "ACTIVE" || s === "NORMAL") return "";
+  const out = ["OUT", "SUSPENSION", "INJURY_RESERVE"].includes(s);
+  const label = { DAY_TO_DAY: "DTD", QUESTIONABLE: "Q", PROBABLE: "P", SUSPENSION: "SSPD", INJURY_RESERVE: "IR" }[s] || s;
+  return `<span class="tag ${out ? "out" : "dtd"}">${esc(label)}</span>`;
+}
+function playerRow(p) {
+  const game = p.game
+    ? `<div class="game">${p.game.home ? "vs" : "@"} <b>${esc(p.game.opp)}</b><div class="meta">${esc(p.game.time)}</div></div>`
+    : `<div class="game none">No game</div>`;
+  const from = p.moved ? `<small>was ${esc(p.current)}</small>` : "";
+  return `<div class="row ${p.starting ? "starting" : ""} ${p.moved ? "moved" : ""}">
+    <div class="slot">${esc(p.suggested)}${from}</div>
+    <div><span class="name">${esc(p.name)}</span>${injuryTag(p.injury)}
+      <div class="meta">${esc(p.positions.join(", "))} · ${esc(p.team)}</div></div>
+    ${game}
+    <div class="fp">${p.value.toFixed(1)}<small>avg</small></div></div>`;
+}
+function renderPlan() {
+  const players = plan.players;
+  const starters = players.filter((p) => p.starting);
+  const bench = players.filter((p) => !p.starting && p.suggested !== "IR");
+  const ir = players.filter((p) => p.suggested === "IR");
+  $("sPlaying").textContent = `${starters.length}/${plan.starting_slots}`;
+  $("sChanges").textContent = plan.moves.length;
+  $("sTeams").textContent = plan.teams_playing;
+  $("changes").innerHTML = plan.moves.length
+    ? plan.moves.map((m) => `<span class="chg">${esc(m.name)}: ${esc(m.from)} → <b>${esc(m.to)}</b></span>`).join("")
+    : `<span class="meta">Your lineup is already set the best way for this day.</span>`;
+  $("applyDay").disabled = !plan.moves.length;
+  const section = (title, list) => list.length ? `<h2>${title}</h2>${list.map(playerRow).join("")}` : "";
+  $("roster").innerHTML = section("Starters", starters) + section("Bench", bench) + section("Injured reserve", ir);
+}
+function showSetupNeeded(msg) {
+  ["sPlaying", "sChanges", "sTeams"].forEach((id) => $(id).textContent = "–");
+  $("changes").innerHTML = ""; $("applyDay").disabled = true; $("applyWeek").disabled = true;
+  $("roster").innerHTML = `<div class="empty">${esc(msg)}<br><br>
+    <button class="btn primary" onclick="showTab('settings')">Open Settings</button></div>`;
+}
+async function loadPlan() {
+  if (!config.configured) return showSetupNeeded("Add your league and ESPN login to get started.");
+  $("roster").innerHTML = Array(6).fill('<div class="skeleton"></div>').join("");
+  try {
+    const useIr = config.settings.use_ir ? 1 : 0;
+    plan = await api(`/api/plan?day=${day}&use_ir=${useIr}`);
+    $("teamName").textContent = plan.team_name;
+    $("applyWeek").disabled = false;
+    renderPlan();
+  } catch (e) { showSetupNeeded(e.message); }
+}
+async function apply(days) {
+  if (busy) return; busy = true;
+  const btn = days === 1 ? $("applyDay") : $("applyWeek"), label = btn.textContent;
+  btn.textContent = "Applying…"; btn.disabled = true;
+  try {
+    const r = await api("/api/apply", { day, days, use_ir: config.settings.use_ir });
+    const changed = r.results.reduce((n, x) => n + x.changed, 0);
+    toast(r.errors.length ? `Done with ${r.errors.length} problem(s): ${r.errors[0]}`
+      : changed ? `Lineup set: ${changed} change${changed === 1 ? "" : "s"}` : "Already optimal, nothing to change", r.errors.length);
+  } catch (e) { toast(e.message, true); }
+  btn.textContent = label; busy = false; loadPlan();
+}
+$("applyDay").onclick = () => apply(1);
+$("applyWeek").onclick = () => apply(7);
+
+// ---- autopilot ----
+async function loadLog() {
+  const items = await api("/api/activity").catch(() => []);
+  $("log").innerHTML = items.length
+    ? items.map((i) => `<li><time>${esc(i.time)}</time><span class="${i.level}">${esc(i.msg)}</span></li>`).join("")
+    : `<li class="meta">Nothing yet. Lineup changes will show up here.</li>`;
+}
+$("saveAuto").onclick = async () => {
+  const settings = { auto_enabled: $("autoOn").checked, auto_time: $("autoTime").value || "10:00",
+    auto_days: +$("autoDays").value, use_ir: $("useIr").checked };
+  try { await api("/api/config", { settings }); config.settings = settings; toast("Autopilot saved"); loadPlan(); }
+  catch (e) { toast(e.message, true); }
+};
+
+// ---- settings ----
+$("saveSettings").onclick = async () => {
+  try {
+    await api("/api/config", { league_id: $("leagueId").value, team_id: $("teamId").value,
+      season: $("season").value, espn_s2: $("s2").value, swid: $("swid").value });
+    $("s2").value = $("swid").value = "";
+    toast("Settings saved"); await init(); showTab("lineup");
+  } catch (e) { toast(e.message, true); }
+};
+
+async function init() {
+  config = await api("/api/config");
+  $("demoPill").hidden = !config.demo;
+  $("leagueId").value = config.league_id; $("teamId").value = config.team_id; $("season").value = config.season;
+  $("s2").placeholder = config.has_s2 ? "Saved. Paste a new one to replace it" : "Paste espn_s2 here";
+  $("swid").placeholder = config.has_swid ? "Saved. Paste a new one to replace it" : "{XXXXXXXX-XXXX-…}";
+  $("cookieHint").textContent = config.demo ? "Demo mode: settings aren't needed." : "";
+  const s = config.settings;
+  $("autoOn").checked = s.auto_enabled; $("autoTime").value = s.auto_time;
+  $("autoDays").value = [1, 2, 3, 7].includes(+s.auto_days) ? s.auto_days : 2; $("useIr").checked = s.use_ir;
+  renderDays(); loadPlan();
+  if (!config.configured) showTab("settings");
+}
+init();
+</script>
+</body>
+</html>

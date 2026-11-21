@@ -198,6 +198,8 @@ def parse_roster(league: dict, team_id: int, season: int) -> list[dict]:
             "injury": p.get("injuryStatus") or ("OUT" if p.get("injured") else "ACTIVE"),
             "slot": entry["lineupSlotId"],
             "value": player_value(p, season),
+            "positions": [SLOT_NAMES[s] for s in (0, 1, 2, 3, 4)
+                          if s in set(p.get("eligibleSlots", []))],
         })
     return roster
 
