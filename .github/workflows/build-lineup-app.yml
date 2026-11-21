@@ -1,0 +1,77 @@
+name: Build Lineup Autopilot app
+
+# Builds a ready-to-run, double-click app for Windows, Mac and Linux and
+# publishes them on the repo's Releases page.
+on:
+  push:
+    paths:
+      - "espn-fantasy-bot/**"
+      - ".github/workflows/build-lineup-app.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: LineupAutopilot-Windows.zip
+          - os: macos-latest
+            asset: LineupAutopilot-Mac.zip
+          - os: ubuntu-latest
+            asset: LineupAutopilot-Linux.zip
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: espn-fantasy-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pyinstaller
+      - run: python test_optimizer.py
+      - name: Build single-file app
+        run: >
+          pyinstaller --onefile --name LineupAutopilot
+          --add-data "static/index.html${{ runner.os == 'Windows' && ';' || ':' }}static"
+          --hidden-import demo_data app.py
+      - name: Package
+        run: |
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a "../${{ matrix.asset }}" LineupAutopilot.exe
+          else
+            zip "../${{ matrix.asset }}" LineupAutopilot
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: espn-fantasy-bot/${{ matrix.asset }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lineup-autopilot-v${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Lineup Autopilot v${{ github.run_number }}
+          make_latest: true
+          body: |
+            Download the file for your computer, unzip it, and double-click **LineupAutopilot**.
+            It opens in your web browser. Keep its window open while you use it.
+
+            - **Windows:** if you see "Windows protected your PC", click **More info → Run anyway**.
+            - **Mac:** if it says the app can't be opened (it isn't signed by Apple), go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+          files: out/*.zip

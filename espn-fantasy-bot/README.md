@@ -10,7 +10,23 @@ Sets your ESPN fantasy basketball lineup for you every day:
 "Best" means this season's average fantasy points, falling back to projections,
 then last season, then % rostered (for category leagues).
 
-## The app (easiest way)
+## Download the app (no Python needed)
+
+Go to this repo's **Releases** page on GitHub and download the latest
+**LineupAutopilot** zip for your computer (Windows, Mac or Linux). Unzip it and
+double-click **LineupAutopilot**. It opens in your web browser. Keep its little
+window open while you use it, and close it to quit.
+
+- **Windows:** if you see "Windows protected your PC", click **More info → Run anyway**.
+- **Mac:** if it says the app can't be opened, go to **System Settings → Privacy &
+  Security**, scroll down and click **Open Anyway**.
+
+Your settings are saved in your user folder (`%APPDATA%\LineupAutopilot` on
+Windows, `~/Library/Application Support/LineupAutopilot` on Mac).
+
+A new build is made automatically whenever the code in `espn-fantasy-bot/` changes.
+
+## Run from the code
 
 Double-click **`Start App (Windows).bat`** or **`Start App (Mac).command`**, or run:
 

@@ -18,6 +18,8 @@ import argparse
 import datetime as dt
 import json
 import os
+import socket
+import sys
 import threading
 import time
 import webbrowser
@@ -28,9 +30,29 @@ from urllib.parse import parse_qs, urlparse
 import espn_bot as bot
 
 HERE = Path(__file__).resolve().parent
-ENV_FILE = HERE / ".env"
-SETTINGS_FILE = HERE / "app_settings.json"
-INDEX_HTML = HERE / "static" / "index.html"
+FROZEN = getattr(sys, "frozen", False)   # True when running as the built app
+
+
+def _data_dir() -> Path:
+    """Where settings are saved. Next to the code when run from source;
+    in the normal per-user app-data folder when run as the built app."""
+    if not FROZEN:
+        return HERE
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    d = base / "LineupAutopilot"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+DATA_DIR = _data_dir()
+ENV_FILE = DATA_DIR / ".env"
+SETTINGS_FILE = DATA_DIR / "app_settings.json"
+INDEX_HTML = Path(getattr(sys, "_MEIPASS", HERE)) / "static" / "index.html"
 
 DEFAULT_SETTINGS = {"auto_enabled": False, "auto_time": "10:00", "auto_days": 2, "use_ir": True}
 ENV_KEYS = ("ESPN_LEAGUE_ID", "ESPN_TEAM_ID", "ESPN_S2", "ESPN_SWID", "ESPN_SEASON")
@@ -386,9 +408,18 @@ def main() -> None:
     engine = Engine(demo=args.demo)
     threading.Thread(target=autopilot, args=(engine,), daemon=True).start()
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(engine))
     url = f"http://127.0.0.1:{args.port}"
-    print(f"Fantasy lineup app running at {url}  (Ctrl+C to quit)")
+    with socket.socket() as probe:
+        already_running = probe.connect_ex(("127.0.0.1", args.port)) == 0
+    if already_running:
+        # Double-clicked again while it's open: just bring up the page.
+        print(f"Already running. Opening {url}")
+        if not args.no_browser:
+            webbrowser.open(url)
+        return
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(engine))
+    print(f"Lineup Autopilot is running at {url}")
+    print("Keep this window open (it's what runs autopilot). Close it to quit.")
     if args.demo:
         print("DEMO MODE: fake team, nothing is sent to ESPN.")
     if not args.no_browser:
