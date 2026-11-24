@@ -12,3 +12,7 @@ keypair.json
 
 # Runtime state
 data/
+
+# outreach-tool secrets — never commit
+outreach-tool/credentials.json
+outreach-tool/token.json
