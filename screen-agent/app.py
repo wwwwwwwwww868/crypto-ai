@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox,
                                QComboBox, QFileDialog, QFrame, QGridLayout,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMainWindow,
+                               QMessageBox,
                                QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy,
                                QSlider, QSpinBox, QStackedWidget,
                                QTableWidget, QTableWidgetItem, QVBoxLayout,
@@ -33,6 +34,7 @@ import screen_agent as sa
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(HERE, "settings.json")
+LOG_FILE = os.path.join(HERE, "error-log.txt")
 
 ACCENT = "#7c6cff"
 GOOD, WARN, BAD = "#3ddc97", "#ffb547", "#ff6b6b"
@@ -104,6 +106,12 @@ class Task(QRunnable):
         try:
             result = self.fn(*self.args)
         except Exception as e:                      # shown in the status bar
+            import traceback
+            try:                                    # full details for bug reports
+                with open(LOG_FILE, "a", encoding="utf-8") as f:
+                    f.write(f"\n--- {time.ctime()}\n{traceback.format_exc()}")
+            except Exception:
+                pass
             self.sig.fail.emit(str(e) or type(e).__name__)
             return
         self.sig.done.emit(result)
@@ -384,7 +392,10 @@ class MainWindow(QMainWindow):
 
         def fail(msg):
             finish()
-            self.say(msg, BAD)
+            first = msg.splitlines()[0]
+            self.say(first, BAD)
+            if "\n" in msg or len(msg) > 140:
+                QMessageBox.warning(self, "Screen Agent", msg)
         t.sig.done.connect(ok)
         t.sig.fail.connect(fail)
         t.sig.progress.connect(lambda m: self.say(m, WARN))
@@ -445,7 +456,8 @@ class MainWindow(QMainWindow):
              "orientation": self.orient.currentIndex(),
              "to_move": self.tomove.currentIndex(),
              "think": self.think.value(), "lines": self.nlines.value(),
-             "arrow": self.arrow_chk.isChecked(), "hide": self.hide_chk.isChecked()}
+             "arrow": self.arrow_chk.isChecked(), "hide": self.hide_chk.isChecked(),
+             "engine_path": self.settings.get("engine_path")}
         try:
             with open(SETTINGS_FILE, "w") as f:
                 json.dump(s, f)
@@ -528,6 +540,9 @@ class MainWindow(QMainWindow):
         g.addWidget(self.pick_btn, 0, 1)
         g.addWidget(self.calib_btn, 1, 0)
         g.addWidget(self.engine_btn, 1, 1)
+        self.engine_file_btn = QPushButton("Choose engine file…")
+        self.engine_file_btn.clicked.connect(self.choose_engine)
+        g.addWidget(self.engine_file_btn, 2, 0, 1, 2)
         l1.addLayout(g)
         self.calib_btn.setToolTip("Show a board in the starting position, then "
                                   "press this. Redo it if you change piece style or site.")
@@ -610,12 +625,20 @@ class MainWindow(QMainWindow):
             self.chip_pieces.setText(dot(GOOD, "Pieces: learned"))
         else:
             self.chip_pieces.setText(dot(WARN, "Pieces: not learned yet — press Learn pieces"))
-        path = cv.find_engine()
-        if path:
-            self.chip_engine.setText(dot(GOOD, "Engine: Stockfish ready"))
-            self.engine_btn.setText("Stockfish ✓")
-        else:
-            self.chip_engine.setText(dot(WARN, "Engine: not found — press Get Stockfish"))
+        self.chip_engine.setText(dot(WARN, "Engine: checking…"))
+
+        def shown(path):
+            if path:
+                self.chip_engine.setText(dot(GOOD, "Engine: Stockfish ready"))
+                self.engine_btn.setText("Stockfish ✓")
+            else:
+                self.chip_engine.setText(dot(WARN, "Engine: not set up — press Get Stockfish"))
+                self.engine_btn.setText("Get Stockfish")
+        t = Task(cv.find_engine)          # testing the engine takes a moment
+        self.tasks.add(t)
+        t.sig.done.connect(lambda p: (self.tasks.discard(t), shown(p)))
+        t.sig.fail.connect(lambda _m: (self.tasks.discard(t), shown(None)))
+        self.pool.start(t)
 
     def _board_rect(self, img_np, offset):
         if self.board_mode == "manual" and self.manual_rect:
@@ -673,20 +696,41 @@ class MainWindow(QMainWindow):
         self.run(work, done=done, busy="Learning your pieces…", buttons=[self.calib_btn])
 
     def get_engine(self):
-        if cv.find_engine():
-            self.say("Stockfish is already installed.", GOOD)
-            return
         self._dl = _Signals()
         self._dl.progress.connect(lambda m: self.say(m, WARN))
 
         def work():
-            return cv.download_engine(progress=self._dl.progress.emit)
+            path = cv.find_engine()
+            return path or cv.download_engine(progress=self._dl.progress.emit)
 
         def done(path):
-            self.say("Stockfish downloaded.", GOOD)
-            self._refresh_chess_status()
-        self.run(work, done=done, busy="Downloading Stockfish…",
+            self._use_engine(path)
+            self.say("Stockfish is set up and working.", GOOD)
+        self.run(work, done=done, busy="Setting up Stockfish…",
                  buttons=[self.engine_btn])
+
+    def choose_engine(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Pick the Stockfish program", HERE,
+                                              "Programs (*.exe);;All files (*)")
+        if not path:
+            return
+
+        def done(ok):
+            if ok:
+                self._use_engine(path)
+                self.say("That Stockfish works — using it.", GOOD)
+            else:
+                self.say("That file didn't run as a chess engine on this PC. Try "
+                         "the 'x86-64' (no avx2) Stockfish download.", BAD)
+        self.run(cv.engine_works, path, done=done, busy="Testing that engine…")
+
+    def _use_engine(self, path):
+        self.settings["engine_path"] = path
+        if self.engine:
+            self.engine.close()
+            self.engine = None
+        self._save_settings()
+        self._refresh_chess_status()
 
     def analyze(self):
         if not self.analyze_btn.isEnabled():
@@ -709,9 +753,17 @@ class MainWindow(QMainWindow):
             if self.engine is None:
                 path = cv.find_engine()
                 if not path:
-                    raise RuntimeError("Stockfish not found — press 'Get Stockfish'.")
+                    raise RuntimeError("Stockfish isn't set up — press 'Get Stockfish'.")
                 self.engine = cv.Engine(path)
-            return reading, rect, self.engine.best_lines(reading.board, seconds, nlines), None
+            try:
+                lines = self.engine.best_lines(reading.board, seconds, nlines)
+            except Exception as e:      # engine crashed: start a fresh one next time
+                self.engine.close()
+                self.engine = None
+                raise RuntimeError(f"The chess engine stopped ({e or 'crashed'}). "
+                                   "Press Find best move again; if it keeps "
+                                   "happening, press 'Choose engine file…'.")
+            return reading, rect, lines, None
 
         self.run(work, done=self._analysis_done, busy="Reading board and thinking…",
                  buttons=[self.analyze_btn])

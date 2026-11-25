@@ -17,6 +17,7 @@ import os
 import platform
 import shutil
 import subprocess
+import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -298,58 +299,138 @@ def problems(board: chess.Board) -> str | None:
 
 
 # ------------------------------------------------------------------ engine
-def find_engine() -> str | None:
+SETTINGS_FILE = os.path.join(HERE, "settings.json")
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+_checked: dict[str, bool] = {}
+
+
+def engine_works(path: str) -> bool:
+    """Really run a short search: a build made for a newer CPU can still say
+    hello ('uciok') and only crash once it starts thinking."""
+    if path in _checked:
+        return _checked[path]
+    ok = False
+    try:
+        out = subprocess.run([path], input="uci\nisready\nposition startpos\n"
+                             "go depth 10\n", capture_output=True, text=True,
+                             timeout=30, creationflags=_NO_WINDOW)
+        ok = "bestmove" in out.stdout
+    except subprocess.TimeoutExpired as e:          # still thinking = fine
+        ok = "bestmove" in (e.stdout or b"").decode(errors="ignore")
+    except Exception:
+        ok = False
+    _checked[path] = ok
+    return ok
+
+
+def _saved_engine() -> str | None:
+    try:
+        import json
+        with open(SETTINGS_FILE) as f:
+            return json.load(f).get("engine_path")
+    except Exception:
+        return None
+
+
+def candidate_engines() -> list[str]:
+    found = []
+    p = _saved_engine()
+    if p and os.path.isfile(p):
+        found.append(p)
     pats = [os.path.join(ENGINE_DIR, "**", "stockfish*.exe"),
             os.path.join(ENGINE_DIR, "**", "stockfish*")]
-    for p in pats:
-        for f in sorted(glob.glob(p, recursive=True)):
-            if os.path.isfile(f) and (f.endswith(".exe") or os.access(f, os.X_OK)):
-                return f
+    for pat in pats:
+        for f in sorted(glob.glob(pat, recursive=True)):
+            if os.path.isfile(f) and (f.lower().endswith(".exe") or os.access(f, os.X_OK)):
+                found.append(f)
     for name in ("stockfish", "/usr/games/stockfish"):
         w = shutil.which(name)
         if w:
-            return w
+            found.append(w)
+    return list(dict.fromkeys(found))
+
+
+def find_engine() -> str | None:
+    """First Stockfish on this computer that actually runs."""
+    for f in candidate_engines():
+        if engine_works(f):
+            return f
     return None
 
 
+# Fastest builds first; the plain x86-64 build runs on any 64-bit PC.
 WINDOWS_BUILDS = ["stockfish-windows-x86-64-avx2.zip",
                   "stockfish-windows-x86-64-sse41-popcnt.zip",
                   "stockfish-windows-x86-64.zip"]
+RELEASES = ["latest/download", "download/sf_17.1", "download/sf_17", "download/sf_16.1"]
+
+
+def _fetch(url: str) -> bytes:
+    import ssl
+    req = urllib.request.Request(url, headers={"User-Agent": "screen-agent"})
+    try:
+        ctx = ssl.create_default_context()
+        try:
+            import certifi                      # better certificates if present
+            ctx.load_verify_locations(certifi.where())
+        except Exception:
+            pass
+        with urllib.request.urlopen(req, timeout=180, context=ctx) as r:
+            return r.read()
+    except urllib.error.URLError as e:
+        if "CERTIFICATE" in str(e).upper():
+            # Windows sometimes lacks the right root certificate for Python;
+            # PowerShell uses Windows' own certificate store instead.
+            tmp = os.path.join(ENGINE_DIR, "_download.zip")
+            subprocess.run(["powershell", "-NoProfile", "-Command",
+                            f"Invoke-WebRequest -UseBasicParsing -Uri '{url}' "
+                            f"-OutFile '{tmp}'"], check=True, timeout=300,
+                           creationflags=_NO_WINDOW)
+            with open(tmp, "rb") as f:
+                data = f.read()
+            os.remove(tmp)
+            return data
+        raise
 
 
 def download_engine(progress=print) -> str:
-    """Download Stockfish for Windows into ./engine. Returns the exe path."""
+    """Download a Stockfish that runs on this PC into ./engine."""
     if platform.system() != "Windows":
         raise RuntimeError("Auto-download is for Windows. Install stockfish "
                            "with your package manager (e.g. apt install stockfish).")
     os.makedirs(ENGINE_DIR, exist_ok=True)
-    base = "https://github.com/official-stockfish/Stockfish/releases/latest/download/"
-    last_err = None
-    for name in WINDOWS_BUILDS:       # fastest build first, older CPUs after
-        try:
-            progress(f"Downloading {name} ...")
-            with urllib.request.urlopen(base + name, timeout=120) as r:
-                data = r.read()
+    errors = []
+    for name in WINDOWS_BUILDS:
+        for rel in RELEASES:
+            url = f"https://github.com/official-stockfish/Stockfish/releases/{rel}/{name}"
             target = os.path.join(ENGINE_DIR, name[:-4])
-            zipfile.ZipFile(io.BytesIO(data)).extractall(target)
-            exes = glob.glob(os.path.join(target, "**", "stockfish*.exe"),
-                             recursive=True)
-            if not exes:
-                raise RuntimeError("no stockfish .exe in the download")
-            exe = exes[0]
-            out = subprocess.run([exe], input="uci\nquit\n", capture_output=True,
-                                 text=True, timeout=15,
-                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            if "uciok" in out.stdout:
-                progress("Stockfish ready.")
-                return exe
-            shutil.rmtree(target, ignore_errors=True)   # CPU can't run it
-            last_err = "build didn't run on this CPU"
-        except Exception as e:   # try the next build
-            last_err = e
-    raise RuntimeError(f"Couldn't download Stockfish ({last_err}). Get it from "
-                       "stockfishchess.org/download and put the .exe in the "
-                       "'engine' folder.")
+            try:
+                progress(f"Downloading {name} ...")
+                data = _fetch(url)
+                shutil.rmtree(target, ignore_errors=True)
+                zipfile.ZipFile(io.BytesIO(data)).extractall(target)
+                exes = glob.glob(os.path.join(target, "**", "stockfish*.exe"),
+                                 recursive=True)
+                if not exes:
+                    raise RuntimeError("no stockfish .exe inside the download")
+                progress("Testing Stockfish on this PC ...")
+                if engine_works(exes[0]):
+                    progress("Stockfish ready.")
+                    return exes[0]
+                shutil.rmtree(target, ignore_errors=True)
+                errors.append(f"{name}: downloaded but doesn't run on this CPU")
+                break                       # same build from older release won't help
+            except urllib.error.HTTPError as e:
+                errors.append(f"{name} ({rel}): HTTP {e.code}")
+                continue                    # not in this release, try the next
+            except Exception as e:
+                shutil.rmtree(target, ignore_errors=True)
+                errors.append(f"{name}: {e}")
+                break
+    raise RuntimeError("Couldn't set up Stockfish automatically. Download it from "
+                       "stockfishchess.org/download, unzip it, then press "
+                       "'Choose engine file…' and pick the stockfish .exe.\n\n"
+                       "Details:\n" + "\n".join(errors[-6:]))
 
 
 @dataclass
