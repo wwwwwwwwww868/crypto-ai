@@ -12,3 +12,4 @@ keypair.json
 
 # Runtime state
 data/
+__pycache__/

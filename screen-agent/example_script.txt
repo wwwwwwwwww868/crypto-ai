@@ -1,0 +1,10 @@
+# Example: open a browser search and type something.
+# Run with:  python screen_agent.py --script example_script.txt
+screenshot before.png
+press win
+sleep 1
+type notepad
+press enter
+sleep 2
+type Hello from screen-agent!
+screenshot after.png
