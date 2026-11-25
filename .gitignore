@@ -17,3 +17,7 @@ screen-agent/engine/
 screen-agent/settings.json
 screen-agent/chess_calibration.npz
 screen-agent/error-log.txt
+screen-agent/analysis-app/build/
+screen-agent/analysis-app/dist/
+screen-agent/analysis-app/*.spec
+screen-agent/analysis-app/icon.ico
