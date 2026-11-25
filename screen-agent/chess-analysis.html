@@ -109,6 +109,21 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
   border-radius: 9px; background-color: var(--panel-2); border: 1px solid #262b3c; cursor: pointer; display: grid; place-items: center; font-size: 18px; }
 .palette div.on { border-color: var(--accent); background-color: #262046; }
 .hidden { display: none !important; }
+.say { font-size: 15px; margin-top: 6px; }
+.say b { color: #fff; }
+.verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; padding: 5px 11px;
+  border-radius: 999px; font-size: 13.5px; background: #232838; }
+.verdict:empty { display: none; }
+.verdict.best { background: rgba(61,220,151,.18); color: #3ddc97; }
+.verdict.good { background: rgba(124,108,255,.18); color: #b3a9ff; }
+.verdict.inacc { background: rgba(255,214,71,.16); color: #ffd647; }
+.verdict.mistake { background: rgba(255,155,71,.18); color: #ffa94d; }
+.verdict.blunder { background: rgba(255,107,107,.2); color: #ff6b6b; }
+.moves .m .ann { font-weight: 700; margin-left: 2px; }
+.ann.inacc { color: #ffd647; } .ann.mistake { color: #ffa94d; } .ann.blunder { color: #ff6b6b; } .ann.best { color: #3ddc97; }
+.moves .m.cur .ann { color: #fff; }
+#movein { font-size: 15px; padding: 10px 12px; }
+#movein.bad { border-color: var(--bad); }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); background: #232838;
   border: 1px solid #3a4060; padding: 10px 16px; border-radius: 12px; opacity: 0; transition: .25s; pointer-events: none; z-index: 99; }
 .toast.show { opacity: 1; transform: translateX(-50%); }
@@ -141,6 +156,13 @@ footer { margin-top: 26px; color: var(--muted); font-size: 12.5px; text-align: c
     </div>
 
     <div class="side">
+      <div class="card" id="commentcard">
+        <h2>Commentary</h2>
+        <div class="verdict" id="verdict"></div>
+        <div class="say" id="assess">Waiting for the engine…</div>
+        <div class="say muted" id="bestsay"></div>
+      </div>
+
       <div class="card" id="enginecard">
         <h2><span class="grow">Engine</span>
           <span class="muted" id="enginestatus">loading…</span>
@@ -154,6 +176,10 @@ footer { margin-top: 26px; color: var(--muted); font-size: 12.5px; text-align: c
           <select id="multipv"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
           <label class="muted" style="white-space:nowrap">Depth</label>
           <select id="maxdepth"><option>12</option><option>16</option><option selected>20</option><option>24</option><option value="99">∞</option></select>
+        </div>
+        <div class="row">
+          <label class="muted" style="white-space:nowrap">Arrows</label>
+          <select id="arrowmode"><option value="1">Best move</option><option value="3" selected>Top 3 moves</option><option value="0">Off</option></select>
         </div>
         <div class="lines" id="lines"></div>
       </div>
@@ -174,6 +200,8 @@ footer { margin-top: 26px; color: var(--muted); font-size: 12.5px; text-align: c
 
       <div class="card">
         <h2>Moves</h2>
+        <div class="row" style="margin-bottom:10px"><input type="text" id="movein" autocomplete="off" spellcheck="false"
+          placeholder="Type a move, press Enter — e4, Nf3, O-O, exd5…"></div>
         <div class="moves" id="moves"></div>
         <div class="nav">
           <button class="btn small" id="first">⏮</button><button class="btn small" id="prev">◀</button>
@@ -236,6 +264,7 @@ function tryMove(from, to, promotion) {
   const mv = game.move({ from, to, promotion: promotion || "q" });
   if (!mv) return false;
   state.history = state.history.slice(0, state.ply);       // new branch replaces the rest
+  for (const k in verdicts) if (+k > state.ply) delete verdicts[k];
   state.history.push(mv.san);
   state.ply++;
   state.selected = null;
@@ -354,21 +383,26 @@ $("promo").addEventListener("pointerdown", e => { e.stopPropagation();
 function drawArrows() {
   const svg = $("arrows"); svg.innerHTML = "";
   if (state.editing || !$("engineon").checked) return;
-  const show = state.hover != null ? [state.lines[state.hover]] : state.lines.slice(0, 1);
-  show.forEach((ln, i) => {
-    if (!ln || !ln.uci) return;
-    const color = state.hover != null ? "#3ddc97" : "#7c6cff";
-    arrow(svg, ln.uci.slice(0, 2), ln.uci.slice(2, 4), color);
-  });
+  const COLORS = ["#7c6cff", "#3ddc97", "#ffb547"], WIDTH = [15, 11, 9];
+  const n = +$("arrowmode").value;
+  const idx = state.hover != null ? [state.hover] : [...Array(Math.min(n, state.lines.length)).keys()];
+  for (const i of idx.slice().reverse()) {          // best arrow drawn last = on top
+    const ln = state.lines[i];
+    if (!ln || !ln.uci) continue;
+    arrow(svg, ln.uci.slice(0, 2), ln.uci.slice(2, 4), COLORS[i % 3], WIDTH[i % 3], i + 1);
+  }
 }
-function arrow(svg, from, to, color) {
+function arrow(svg, from, to, color, w = 15, label = null) {
   const [c1, r1] = sqPos(from), [c2, r2] = sqPos(to);
   const x1 = c1 * 100 + 50, y1 = r1 * 100 + 50, x2 = c2 * 100 + 50, y2 = r2 * 100 + 50;
   const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
-  const head = 34, w = 15, bx = x2 - ux * head, by = y2 - uy * head;
+  const head = w * 2.3, hw = w * 1.6, bx = x2 - ux * head, by = y2 - uy * head;
+  const tag = label && $("arrowmode").value !== "1" && state.hover == null
+    ? `<circle cx="${x1}" cy="${y1}" r="17" fill="${color}"/><text x="${x1}" y="${y1 + 7}" text-anchor="middle"
+       font-size="20" font-weight="700" fill="#10131a" stroke="none">${label}</text>` : "";
   const g = `<g opacity=".82" fill="${color}" stroke="${color}">
     <line x1="${x1}" y1="${y1}" x2="${bx}" y2="${by}" stroke-width="${w}" stroke-linecap="round"/>
-    <polygon points="${x2},${y2} ${bx - uy * 24},${by + ux * 24} ${bx + uy * 24},${by - ux * 24}" stroke="none"/></g>`;
+    <polygon points="${x2},${y2} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}" stroke="none"/>${tag}</g>`;
   svg.insertAdjacentHTML("beforeend", g);
 }
 
@@ -383,6 +417,8 @@ function renderMoves() {
     const d = document.createElement("div");
     d.className = "m" + (i + 1 === state.ply ? " cur" : "");
     d.textContent = san; d.onclick = () => setPly(i + 1);
+    const vd = verdicts[i + 1];
+    if (vd && vd.ann) d.insertAdjacentHTML("beforeend", `<span class="ann ${vd.cls}">${vd.ann}</span>`);
     el.appendChild(d);
     if (!white) num++;
     white = !white;
@@ -434,6 +470,7 @@ function onEngine(line) {
   const white = searchFen.split(" ")[1] === "w" ? 1 : -1;      // engine scores are side-to-move
   const ln = { depth, uci: pv[0], sans, mate: kind === "mate" ? val * white : null, cp: kind === "cp" ? val * white : null };
   state.lines[mpv - 1] = ln;
+  if (mpv === 1) evalCache[searchFen] = { w: pawns(ln), best: ln.uci, san: ln.sans[0], depth };
   state.lines.length = Math.min(state.lines.length, +$("multipv").value);
   $("depth").textContent = `depth ${depth} …`;
   renderLines();
@@ -443,10 +480,15 @@ function analyse() {
   pending = null;
   if (running) { running = false; toStop++; worker.postMessage("stop"); }
   if (!engineReady || !$("engineon").checked || state.editing) {
-    $("depth").textContent = "depth –"; $("evalbig").textContent = "–"; return; }
+    $("depth").textContent = "depth –"; $("evalbig").textContent = "–";
+    $("assess").textContent = $("engineon").checked ? "Waiting for the engine…" : "Engine is off.";
+    $("bestsay").textContent = ""; $("verdict").textContent = ""; return; }
   if (game.game_over()) {
     $("evalbig").textContent = game.in_checkmate() ? (game.turn() === "w" ? "0–1" : "1–0") : "½–½";
     $("depth").textContent = game.in_checkmate() ? "checkmate" : "draw";
+    $("assess").innerHTML = game.in_checkmate() ? `<b>Checkmate — ${SIDE(game.turn() === "w" ? "b" : "w")} wins!</b>`
+      : "<b>It's a draw.</b>";
+    $("bestsay").textContent = ""; $("verdict").textContent = "";
     setBar(game.in_checkmate() ? (game.turn() === "w" ? -100 : 100) : 0);
     return;
   }
@@ -458,6 +500,67 @@ function go(fen) {
   worker.postMessage("setoption name MultiPV value " + $("multipv").value);
   worker.postMessage("position fen " + fen);
   worker.postMessage("go depth " + $("maxdepth").value);
+}
+// ------------------------------------------------------------- commentary
+const evalCache = {};      // fen -> { w: score in pawns from White's view, best, san, depth }
+const verdicts = {};       // ply -> { cls, ann }
+function winPct(p) { return 50 + 50 * (2 / (1 + Math.exp(-0.368 * p)) - 1); }   // pawns -> win %
+function pawns(ln) { return ln.mate != null ? Math.sign(ln.mate) * (100 - Math.abs(ln.mate)) : ln.cp / 100; }
+const SIDE = c => c === "w" ? "White" : "Black";
+function assessText(ln) {
+  if (ln.mate != null) return `<b>${ln.mate > 0 ? "White" : "Black"} has a forced checkmate</b> in ${Math.abs(ln.mate)}.`;
+  const w = ln.cp / 100, a = Math.abs(w), side = w > 0 ? "White" : "Black";
+  if (a < 0.5) return "<b>The position is about equal.</b>";
+  if (a < 1.1) return `<b>${side} is slightly better.</b>`;
+  if (a < 2.2) return `<b>${side} is better</b> — a clear edge.`;
+  if (a < 4.5) return `<b>${side} is much better</b> — close to winning.`;
+  return `<b>${side} is winning.</b>`;
+}
+function describe(san) {
+  const bits = [];
+  if (san.startsWith("O-O-O")) bits.push("castling queenside");
+  else if (san.startsWith("O-O")) bits.push("castling kingside");
+  if (san.includes("x")) bits.push("a capture");
+  if (san.includes("=")) bits.push("promoting");
+  if (san.includes("#")) bits.push("checkmate!");
+  else if (san.includes("+")) bits.push("with check");
+  return bits.length ? ` (${bits.join(", ")})` : "";
+}
+function updateCommentary() {
+  const top = state.lines[0];
+  if (!top) return;
+  $("assess").innerHTML = assessText(top);
+  const turn = game.turn(), sgn = turn === "w" ? 1 : -1;
+  let best = `${SIDE(turn)} to move. Engine's choice: <b>${top.sans[0]}</b>${describe(top.sans[0])}.`;
+  const second = state.lines[1];
+  if (second && Math.abs(pawns(top)) < 50 && (pawns(top) - pawns(second)) * sgn >= 1.5)
+    best += " It's practically the <b>only move</b> — everything else is much worse.";
+  $("bestsay").innerHTML = best;
+
+  // judge the move that led here
+  const v = $("verdict");
+  if (state.ply === 0) { v.textContent = ""; return; }
+  const prevGame = gameAt(state.ply - 1), prevFen = prevGame.fen();
+  const prev = evalCache[prevFen];
+  if (!prev || prev.depth < 11 || top.depth < 11) {   // shallow scores are too noisy to judge
+    v.className = "verdict"; v.textContent = `${state.history[state.ply - 1]}: analysing…`; return; }
+  const mover = prevGame.turn(), ms = mover === "w" ? 1 : -1;
+  const played = prevGame.move(state.history[state.ply - 1]);
+  const uci = played.from + played.to + (played.promotion || "");
+  // Judge by lost winning chances (same idea and thresholds as Lichess), so
+  // +0.3 -> +0.9 in a quiet position isn't called a mistake but +1 -> -2 is.
+  const drop = (winPct(prev.w * ms) - winPct(pawns(top) * ms));
+  let cls, text, ann;
+  if (uci === prev.best || drop < 2) { cls = "best"; ann = "!"; text = "Best move"; }
+  else if (drop < 10) { cls = "good"; ann = ""; text = "Good move"; }
+  else if (drop < 20) { cls = "inacc"; ann = "?!"; text = `Inaccuracy — ${prev.san} was better`; }
+  else if (drop < 30) { cls = "mistake"; ann = "?"; text = `Mistake — ${prev.san} was much better`; }
+  else { cls = "blunder"; ann = "??"; text = `Blunder — ${prev.san} was the move`; }
+  v.className = "verdict " + cls;
+  v.textContent = `${state.history[state.ply - 1]}: ${text}`;
+  const old = verdicts[state.ply];
+  verdicts[state.ply] = { cls, ann };
+  if (!old || old.ann !== ann) renderMoves();
 }
 function fmt(ln) {
   if (ln.mate != null) return (ln.mate > 0 ? "#" : "#-") + Math.abs(ln.mate);
@@ -494,11 +597,12 @@ function renderLines() {
     const whiteAhead = top.mate != null ? top.mate > 0 : top.cp >= 0;
     $("evaltop").textContent = whiteAhead === state.flipped ? t : "";
     $("evalbot").textContent = whiteAhead !== state.flipped ? t : "";
+    updateCommentary();
   }
   drawArrows();
 }
 $("engineon").onchange = analyse;
-$("multipv").onchange = analyse; $("maxdepth").onchange = analyse;
+$("multipv").onchange = analyse; $("maxdepth").onchange = analyse; $("arrowmode").onchange = drawArrows;
 
 // ------------------------------------------------------------ position editor
 const editBoard = {};
@@ -563,7 +667,7 @@ function loadFen(fen, quiet) {
   if (!v.valid) { toast("That position isn't valid: " + v.error); return false; }
   const kings = fen.split(" ")[0].replace(/[^kK]/g, "");
   if (kings.length !== 2 || kings[0] === kings[1]) { toast("Each side needs exactly one king."); return false; }
-  state.rootFen = fen; state.history = []; setPly(0);
+  state.rootFen = fen; state.history = []; for (const k in verdicts) delete verdicts[k]; setPly(0);
   if (!quiet) toast("Position loaded");
   return true;
 }
@@ -573,21 +677,43 @@ $("loadpgn").onclick = () => {
   const g = new Chess();
   if (!g.load_pgn($("pgnin").value.trim(), { sloppy: true })) { toast("Couldn't read that PGN"); return; }
   const h = g.history(); const hdr = g.header();
-  state.rootFen = hdr.FEN || START; state.history = h; setPly(0);
+  state.rootFen = hdr.FEN || START; state.history = h; for (const k in verdicts) delete verdicts[k]; setPly(0);
   toast(`Loaded ${h.length} moves`);
 };
-$("newgame").onclick = () => { state.rootFen = START; state.history = []; setPly(0); };
+$("newgame").onclick = () => { state.rootFen = START; state.history = []; for (const k in verdicts) delete verdicts[k]; setPly(0); };
 $("flip").onclick = () => { state.flipped = !state.flipped; render(); renderLines(); };
 $("copyfen").onclick = () => { navigator.clipboard.writeText(game.fen()); toast("FEN copied"); };
 $("copypgn").onclick = () => { navigator.clipboard.writeText(gameAt(state.history.length).pgn()); toast("PGN copied"); };
 $("first").onclick = () => setPly(0); $("last").onclick = () => setPly(state.history.length);
 $("prev").onclick = () => setPly(state.ply - 1); $("next").onclick = () => setPly(state.ply + 1);
 $("playbest").onclick = () => { const ln = state.lines[0]; if (ln) tryMove(ln.uci.slice(0, 2), ln.uci.slice(2, 4), ln.uci[4]); };
+function typedMove(text) {
+  let t = text.trim().replace(/0/g, "O").replace(/[!?]+$/, "");
+  const tries = [t];
+  if (/^[nbrqk][a-h1-8x]/.test(t)) tries.push(t[0].toUpperCase() + t.slice(1));   // "nf3" -> "Nf3"
+  for (const c of tries) {
+    const m = new Chess(game.fen()).move(c, { sloppy: true });
+    if (m) return m;
+  }
+  return null;
+}
+$("movein").addEventListener("keydown", e => {
+  const box = e.target;
+  box.classList.remove("bad");
+  if (e.key === "ArrowLeft" && !box.value) { setPly(state.ply - 1); return; }
+  if (e.key === "ArrowRight" && !box.value) { setPly(state.ply + 1); return; }
+  if (e.key !== "Enter" || !box.value.trim() || state.editing) return;
+  const m = typedMove(box.value);
+  if (!m) { box.classList.add("bad"); toast(`"${box.value.trim()}" isn't a legal move here`); return; }
+  tryMove(m.from, m.to, m.promotion);
+  box.value = "";
+});
 document.addEventListener("keydown", e => {
   if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "ArrowLeft") setPly(state.ply - 1);
   else if (e.key === "ArrowRight") setPly(state.ply + 1);
-  else if (e.key === "f") $("flip").click();
+  else if (/^[a-hA-Hknbrqo0KNBRQO]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !state.editing)
+    $("movein").focus();          // just start typing a move anywhere on the page
 });
 
 buildPalette();
