@@ -59,7 +59,7 @@ class Word:
     conf: float
 
 
-def read_text(region=None, min_conf=50.0) -> list[Word]:
+def read_text(region=None, min_conf=50.0, img=None) -> list[Word]:
     """OCR the screen. Returns every word with its centre position."""
     import os, shutil, pytesseract
     if not shutil.which("tesseract"):           # Windows: no PATH edit needed
@@ -68,7 +68,8 @@ def read_text(region=None, min_conf=50.0) -> list[Word]:
             if os.path.exists(p):
                 pytesseract.pytesseract.tesseract_cmd = p
                 break
-    img = capture(region)
+    if img is None:
+        img = capture(region)
     ox, oy = img.info["offset"]
     # Screens have small, scattered text: grayscale + 2x upscale + "sparse
     # text" mode (psm 11) reads far more of it than the defaults do.
@@ -88,10 +89,10 @@ def read_text(region=None, min_conf=50.0) -> list[Word]:
     return words
 
 
-def find_text(target: str, region=None) -> Word | None:
+def find_text(target: str, region=None, img=None) -> Word | None:
     """Find a word or phrase on screen (case-insensitive)."""
     parts = target.lower().split()
-    words = read_text(region)
+    words = read_text(region, img=img)
     low = [w.text.lower() for w in words]
     for i in range(len(words) - len(parts) + 1):
         if all(parts[j] in low[i + j] for j in range(len(parts))):
@@ -101,19 +102,20 @@ def find_text(target: str, region=None) -> Word | None:
     return None
 
 
-def find_image(template_path: str, threshold=0.85, region=None):
+def find_image(template_path: str, threshold=0.85, region=None, img=None):
     """Find a picture on screen. Returns (x, y, score) of its centre or None."""
     import cv2
-    screen = cv2.cvtColor(np.array(capture(region)), cv2.COLOR_RGB2BGR)
-    tpl = cv2.imread(template_path)
+    if img is None:
+        img = capture(region)
+    screen = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    tpl = cv2.imdecode(np.fromfile(template_path, np.uint8), cv2.IMREAD_COLOR)
     if tpl is None:
         raise FileNotFoundError(template_path)
     res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
     _, score, _, loc = cv2.minMaxLoc(res)
     if score < threshold:
         return None
-    ox, oy = (region[0], region[1]) if region else (
-        capture().info["offset"])
+    ox, oy = img.info["offset"]
     h, w = tpl.shape[:2]
     return ox + loc[0] + w // 2, oy + loc[1] + h // 2, score
 

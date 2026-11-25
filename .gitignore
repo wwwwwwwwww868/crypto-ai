@@ -13,3 +13,6 @@ keypair.json
 # Runtime state
 data/
 __pycache__/
+screen-agent/engine/
+screen-agent/settings.json
+screen-agent/chess_calibration.npz

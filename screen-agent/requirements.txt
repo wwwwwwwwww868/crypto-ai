@@ -4,3 +4,5 @@ pillow>=10.0
 numpy>=1.26
 opencv-python>=4.8
 pytesseract>=0.3.10
+PySide6-Essentials>=6.6
+chess>=1.10

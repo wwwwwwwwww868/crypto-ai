@@ -1,14 +1,36 @@
 # screen-agent
 
-Scans your screen (screenshots + OCR text reading + image matching) and
-interacts with it (click, type, press keys, scroll). Separate from the
+A desktop app that scans your screen and interacts with it. Separate from the
 trading bot in the rest of this repo.
+
+- **Chess** — finds a chess board anywhere on screen (any site or theme),
+  reads the position and shows Stockfish's best moves, with an arrow drawn
+  on the real board.
+- **Screen tools** — screenshots, read all text (OCR), find text or a picture
+  and click it.
+- **Console** — type commands or run script files (the original tool).
+
+## Chess: first use
+
+1. Press **Get Stockfish** (downloads the free chess engine into `engine/`).
+2. Show a board in the **starting position** (e.g. a new analysis board) and
+   press **Learn pieces**. This teaches it your site's piece style; redo it if
+   you change piece set or site.
+3. Show any position and press **Find best move** (or F8).
+
+If auto-detection can't find the board, use **Select board area…** and drag a
+square around it. Set *To move* if it's not the side at the bottom to play.
+
+Use it for studying, puzzles, reviewing your own games and playing against
+bots. Using engine help during live games against people breaks the rules of
+chess.com, lichess and every other site, and gets accounts banned.
 
 ## Windows 11 quick setup
 
 1. Install Python from https://www.python.org/downloads/ — tick **"Add python.exe to PATH"** in the installer.
 2. Download this folder, then double-click **`setup.bat`** (installs the Python packages and Tesseract OCR).
-3. Double-click **`start.bat`** to open the `>` prompt.
+3. Double-click **`start.bat`** to open the app. (`console.bat` opens the old
+   text-only prompt.)
 
 ## Setup (other systems / manual)
 
