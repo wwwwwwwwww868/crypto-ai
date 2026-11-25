@@ -4,12 +4,18 @@ Scans your screen (screenshots + OCR text reading + image matching) and
 interacts with it (click, type, press keys, scroll). Separate from the
 trading bot in the rest of this repo.
 
-## Setup
+## Windows 11 quick setup
+
+1. Install Python from https://www.python.org/downloads/ — tick **"Add python.exe to PATH"** in the installer.
+2. Download this folder, then double-click **`setup.bat`** (installs the Python packages and Tesseract OCR).
+3. Double-click **`start.bat`** to open the `>` prompt.
+
+## Setup (other systems / manual)
 
 1. Python 3.10+
 2. Install Tesseract OCR (needed for reading text):
    - Windows: installer from https://github.com/UB-Mannheim/tesseract/wiki
-     (then add `C:\Program Files\Tesseract-OCR` to PATH)
+     (the default install location is found automatically)
    - Mac: `brew install tesseract`
    - Linux: `sudo apt install tesseract-ocr`
 3. `pip install -r requirements.txt`

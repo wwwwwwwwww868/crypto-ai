@@ -61,7 +61,13 @@ class Word:
 
 def read_text(region=None, min_conf=50.0) -> list[Word]:
     """OCR the screen. Returns every word with its centre position."""
-    import pytesseract
+    import os, shutil, pytesseract
+    if not shutil.which("tesseract"):           # Windows: no PATH edit needed
+        for p in (r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                  os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe")):
+            if os.path.exists(p):
+                pytesseract.pytesseract.tesseract_cmd = p
+                break
     img = capture(region)
     ox, oy = img.info["offset"]
     # Screens have small, scattered text: grayscale + 2x upscale + "sparse
